@@ -74,6 +74,25 @@ def parse_args() -> argparse.Namespace:
         help="Disable rich TUI, use plain text output",
     )
 
+    # REST API server
+    parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Start the FastAPI REST API server",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host for the REST API server (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port for the REST API server (default: 8000)",
+    )
+
     # History commands
     parser.add_argument(
         "--list-sessions",
@@ -94,6 +113,22 @@ def parse_args() -> argparse.Namespace:
     )
 
     return parser.parse_args()
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Start the FastAPI REST API server."""
+    try:
+        import uvicorn
+    except ImportError:
+        console = Console()
+        console.print("[red]Error: uvicorn is required for the REST API server[/red]")
+        console.print("Install with: pip install -e \".[server]\"")
+        return 1
+
+    from .server import app
+
+    uvicorn.run(app, host=args.host, port=args.port)
+    return 0
 
 
 def cmd_list_sessions(args: argparse.Namespace) -> int:
@@ -297,6 +332,8 @@ def main() -> int:
         return cmd_replay(args)
     if args.show:
         return cmd_show(args)
+    if args.serve:
+        return cmd_serve(args)
 
     # Default: run agent
     return cmd_run(args)

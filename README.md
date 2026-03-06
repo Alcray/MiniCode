@@ -189,7 +189,88 @@ minicode --list-sessions
 minicode --replay 20240115_143052_1234
 ```
 
-## Plan Mode
+## REST API (FastAPI)
+
+MiniCode can be run as an HTTP service using [FastAPI](https://fastapi.tiangolo.com/).
+
+### Install
+
+```bash
+pip install -e ".[server]"
+```
+
+### Start the server
+
+```bash
+# Default: http://127.0.0.1:8000
+minicode --serve
+
+# Custom host / port
+minicode --serve --host 0.0.0.0 --port 9000
+```
+
+### Endpoints
+
+#### `POST /run`
+
+Run the agent with a task.
+
+**Request body**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `request` | string | *required* | The coding task to perform |
+| `root` | string | `"."` | Workspace root directory |
+| `max_steps` | int | `30` | Maximum agent steps (1–200) |
+| `plan_mode` | bool | `false` | Explore only, no file modifications |
+| `model` | string | env default | LLM model override |
+| `base_url` | string | env default | LLM API base URL override |
+
+**Example**
+
+```bash
+curl -X POST http://localhost:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"request": "add a hello world function to app.py", "root": "/path/to/project"}'
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "final_message": "Done. Added hello_world() to app.py.",
+  "step_count": 3,
+  "tool_call_count": 4,
+  "files_touched": ["app.py"],
+  "status": "complete",
+  "session_id": "20240115_143052_1234"
+}
+```
+
+#### `GET /sessions`
+
+List recent sessions for a workspace.
+
+```bash
+curl "http://localhost:8000/sessions?root=/path/to/project"
+```
+
+#### `GET /sessions/{session_id}`
+
+Get details for a specific session.
+
+```bash
+curl "http://localhost:8000/sessions/20240115_143052_1234?root=/path/to/project"
+```
+
+### Interactive API docs
+
+FastAPI automatically generates interactive documentation at:
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+
+
 
 Run with `--plan` to explore without making changes:
 
