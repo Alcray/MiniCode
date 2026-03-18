@@ -1,13 +1,6 @@
 # MiniCode
 
-Minimal, hackable **agentic coding runtime**. A foundation layer for building AI-powered coding tools.
-
-## Philosophy
-
-- **Minimal**: ~1500 lines of Python, few dependencies
-- **Hackable**: Flat structure, no framework gravity
-- **Debuggable**: Structured logging, session replay
-- **Transparent**: See every tool call, every LLM response
+Minimal, hackable **agentic coding runtime**. A foundation layer for building AI-powered agentic tools.
 
 ## Quick Start
 
@@ -51,7 +44,7 @@ export MINICODE_MODEL=claude-3-5-sonnet-20241022
 export MINICODE_BASE_URL=http://localhost:11434/v1
 export MINICODE_MODEL=llama3.1
 
-# Cerebras (if OpenAI-compatible)
+# Cerebras
 export MINICODE_BASE_URL=https://api.cerebras.ai/v1
 export MINICODE_API_KEY=...
 ```
@@ -225,13 +218,26 @@ Run the agent with a task.
 | `plan_mode` | bool | `false` | Explore only, no file modifications |
 | `model` | string | env default | LLM model override |
 | `base_url` | string | env default | LLM API base URL override |
+| `system_prompt` | string | `null` | Custom system prompt (overrides default) |
+| `allowed_tools` | list[string] | `null` | Restrict available tools (null = all) |
 
-**Example**
+**Examples**
 
 ```bash
+# Basic request
 curl -X POST http://localhost:8000/run \
   -H "Content-Type: application/json" \
   -d '{"request": "add a hello world function to app.py", "root": "/path/to/project"}'
+
+# Read-only validator with custom prompt and restricted tools
+curl -X POST http://localhost:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{
+    "request": "review app.py for bugs",
+    "root": "/path/to/project",
+    "system_prompt": "You are a code reviewer. Report issues but do not fix them.",
+    "allowed_tools": ["list", "glob", "grep", "read"]
+  }'
 ```
 
 **Response**
@@ -289,7 +295,7 @@ In plan mode:
 minicode/
 ├── agent.py       # Core agentic loop
 ├── llm.py         # OpenAI-compatible client
-├── tools.py       # Tool registry + implementations
+├── tools.py       # Tool registry, implementations + CustomTool
 ├── workspace.py   # Filesystem + ignore rules
 ├── permissions.py # Permission system
 ├── logging_.py    # Structured logging
@@ -312,10 +318,77 @@ Tests use a mock LLM client - no API key required.
 
 MiniCode is designed to be a foundation. To build on it:
 
-1. **Custom tools**: Add to `tools.py`, update `TOOL_SCHEMAS`
-2. **Custom prompts**: Modify `prompts.py`
+1. **Custom tools**: Register via `CustomTool` (see below) or add to `tools.py`
+2. **Custom prompts**: Pass `system_prompt` to `AgentConfig` or modify `prompts.py`
 3. **Custom UI**: Implement `UICallback` protocol
 4. **Custom permissions**: Extend `PermissionManager`
+5. **Tool allow-lists**: Pass `allowed_tools` to `AgentConfig` to restrict the toolset
+
+### Python API
+
+#### Custom System Prompt
+
+Override the built-in system prompt per agent:
+
+```python
+from minicode.agent import Agent, AgentConfig
+from minicode.llm import LLMClient, LLMConfig
+
+config = AgentConfig(system_prompt="You are a security auditor. Only report vulnerabilities.")
+agent = Agent(workspace_root=".", llm_client=LLMClient(LLMConfig.from_env()), config=config)
+result = agent.run("audit this project")
+```
+
+When `system_prompt` is set it takes priority over the default and plan-mode prompts.
+
+#### Tool Allow-List
+
+Restrict which tools the LLM can see and call:
+
+```python
+config = AgentConfig(allowed_tools=["list", "glob", "grep", "read"])
+agent = Agent(workspace_root=".", llm_client=LLMClient(LLMConfig.from_env()), config=config)
+```
+
+The LLM never sees schemas for tools outside the allow-list, so it cannot attempt to call them.
+
+#### Custom Tools
+
+Register tools at runtime without editing `tools.py`:
+
+```python
+from minicode.tools import CustomTool
+
+def my_handler(args: dict) -> dict:
+    return {"result": f"Hello, {args.get('name', 'world')}!"}
+
+greet_tool = CustomTool(
+    schema={
+        "type": "function",
+        "function": {
+            "name": "greet",
+            "description": "Greet someone by name.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Name to greet"}
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    handler=my_handler,
+)
+
+agent = Agent(
+    workspace_root=".",
+    llm_client=LLMClient(LLMConfig.from_env()),
+    custom_tools=[greet_tool],
+)
+result = agent.run("greet Alice")
+```
+
+Custom tool schemas use the same OpenAI function-calling format as the built-in tools.
 
 ## Non-Goals
 

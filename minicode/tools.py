@@ -4,7 +4,7 @@ import json
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from .workspace import Workspace
 
@@ -184,9 +184,19 @@ TOOL_SCHEMAS = [
 ]
 
 
-def get_tool_schemas() -> list[dict]:
-    """Return OpenAI-style tool schemas."""
-    return TOOL_SCHEMAS
+@dataclass
+class CustomTool:
+    """A user-defined tool with an OpenAI function schema and a handler."""
+    schema: dict
+    handler: Callable[[dict], dict]
+
+
+def get_tool_schemas(custom_tools: list[CustomTool] | None = None) -> list[dict]:
+    """Return OpenAI-style tool schemas, optionally including custom tools."""
+    schemas = list(TOOL_SCHEMAS)
+    for tool in (custom_tools or []):
+        schemas.append(tool.schema)
+    return schemas
 
 
 class ToolExecutor:
@@ -194,8 +204,11 @@ class ToolExecutor:
 
     MAX_OUTPUT_BYTES = 50_000  # 50KB output limit per tool
 
-    def __init__(self, workspace: Workspace):
+    def __init__(self, workspace: Workspace, custom_tools: list[CustomTool] | None = None):
         self.workspace = workspace
+        self._custom_tools: dict[str, CustomTool] = {
+            t.schema["function"]["name"]: t for t in (custom_tools or [])
+        }
 
     def execute(self, tool_name: str, args: dict) -> ToolResult:
         """Execute a tool and return result."""
@@ -216,6 +229,8 @@ class ToolExecutor:
                 result = self._execute_edit(args)
             elif tool_name == "bash":
                 result = self._execute_bash(args)
+            elif tool_name in self._custom_tools:
+                result = self._custom_tools[tool_name].handler(args)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
         except Exception as e:
