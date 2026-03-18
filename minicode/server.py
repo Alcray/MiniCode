@@ -29,6 +29,8 @@ class RunRequest(BaseModel):
     plan_mode: bool = Field(False, description="Plan mode: explore only, no modifications")
     model: str | None = Field(None, description="LLM model override")
     base_url: str | None = Field(None, description="LLM API base URL override")
+    system_prompt: str | None = Field(None, description="Custom system prompt")
+    allowed_tools: list[str] | None = Field(None, description="Restrict available tools")
 
 
 class RunResponse(BaseModel):
@@ -109,6 +111,8 @@ def create_app() -> FastAPI:
         agent_config = AgentConfig(
             max_steps=body.max_steps,
             plan_mode=body.plan_mode,
+            system_prompt=body.system_prompt,
+            allowed_tools=body.allowed_tools,
         )
 
         permission_config = PermissionConfig.load(workspace_root)

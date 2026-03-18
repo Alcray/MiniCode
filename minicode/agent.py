@@ -10,7 +10,7 @@ from .logging_ import EventLogger, create_session_logger
 from .history import SessionWriter
 from .permissions import PermissionConfig, PermissionManager, PermissionDecision
 from .prompts import SYSTEM_PROMPT, PLAN_MODE_PROMPT
-from .tools import ToolExecutor, ToolResult, get_tool_schemas
+from .tools import CustomTool, ToolExecutor, ToolResult, get_tool_schemas
 from .workspace import Workspace
 
 
@@ -21,6 +21,8 @@ class AgentConfig:
     max_tool_calls_per_step: int = 8
     doom_loop_threshold: int = 3
     plan_mode: bool = False
+    system_prompt: str | None = None
+    allowed_tools: list[str] | None = None
 
 
 @dataclass
@@ -98,14 +100,16 @@ class Agent:
         config: AgentConfig | None = None,
         permission_config: PermissionConfig | None = None,
         ui: UICallback | None = None,
+        custom_tools: list[CustomTool] | None = None,
     ):
         self.workspace = Workspace(workspace_root)
         self.llm_client = llm_client
         self.config = config or AgentConfig()
         self.permission_config = permission_config or PermissionConfig.load(self.workspace.root)
         self.ui = ui or NullUI()
+        self.custom_tools = custom_tools or []
 
-        self.tool_executor = ToolExecutor(self.workspace)
+        self.tool_executor = ToolExecutor(self.workspace, custom_tools=self.custom_tools)
 
         # Set up permission manager with prompt callback
         self.permission_manager = PermissionManager(
@@ -160,7 +164,12 @@ class Agent:
 
     def _build_messages(self, request: str) -> list[dict]:
         """Build initial message list."""
-        system_prompt = PLAN_MODE_PROMPT if self.config.plan_mode else SYSTEM_PROMPT
+        if self.config.system_prompt:
+            system_prompt = self.config.system_prompt
+        elif self.config.plan_mode:
+            system_prompt = PLAN_MODE_PROMPT
+        else:
+            system_prompt = SYSTEM_PROMPT
 
         return [
             {"role": "system", "content": system_prompt},
@@ -168,13 +177,16 @@ class Agent:
         ]
 
     def _get_tools(self) -> list[dict]:
-        """Get tool schemas, filtered for plan mode if needed."""
-        tools = get_tool_schemas()
+        """Get tool schemas, filtered for plan mode / allowed_tools."""
+        tools = get_tool_schemas(custom_tools=self.custom_tools)
 
         if self.config.plan_mode:
-            # Filter out write tools in plan mode
             write_tools = {"write", "patch", "bash"}
             tools = [t for t in tools if t["function"]["name"] not in write_tools]
+
+        if self.config.allowed_tools is not None:
+            allowed = set(self.config.allowed_tools)
+            tools = [t for t in tools if t["function"]["name"] in allowed]
 
         return tools
 
