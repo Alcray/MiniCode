@@ -93,7 +93,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "read",
-            "description": "Read file content. Can specify line range for large files.",
+            "description": "Read a file from the workspace. Returns up to 2000 lines by default. Contents are returned with each line prefixed by its line number as 'N: content'. When editing text from read output, preserve the exact indentation as it appears AFTER the line number prefix. Never include the line number prefix in old_string or new_string. Use offset to read later sections. Use grep to find specific content in large files. Avoid tiny repeated slices -- read a larger window instead.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -101,13 +101,13 @@ TOOL_SCHEMAS = [
                         "type": "string",
                         "description": "File path relative to workspace root",
                     },
-                    "start_line": {
+                    "offset": {
                         "type": "integer",
-                        "description": "First line to read (1-indexed). Optional.",
+                        "description": "Line number to start reading from (1-indexed). Default: 1.",
                     },
-                    "end_line": {
+                    "limit": {
                         "type": "integer",
-                        "description": "Last line to read (1-indexed). Optional.",
+                        "description": "Maximum number of lines to read. Default: 2000.",
                     },
                 },
                 "required": ["path"],
@@ -118,7 +118,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "write",
-            "description": "Create or overwrite a file with the given content.",
+            "description": "Writes a file to the workspace. This tool will overwrite the existing file if there is one at the provided path. ALWAYS prefer editing existing files with the edit tool. NEVER write new files unless explicitly required. NEVER proactively create documentation files (*.md) or README files unless explicitly requested.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -139,7 +139,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "edit",
-            "description": "Performs exact string replacements in files. The old_string must match exactly (including whitespace and indentation) and must be unique in the file. Provide enough surrounding context (3-5 lines) to make old_string unique. Use replace_all to change every instance. For creating new files or full rewrites, use the write tool instead.",
+            "description": "Performs exact string replacements in files. The old_string must match exactly including all whitespace, indentation, and line endings. Include at least 3-5 lines of surrounding context to make old_string unique. The edit will FAIL if old_string is not found. The edit will FAIL if old_string matches multiple locations -- provide more context to disambiguate. Use replace_all to change every instance, useful for renaming variables.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -274,9 +274,9 @@ class ToolExecutor:
 
     def _execute_read(self, args: dict) -> dict:
         path = args.get("path", "")
-        start_line = args.get("start_line")
-        end_line = args.get("end_line")
-        result = self.workspace.read_file(path, start_line, end_line)
+        offset = args.get("offset")
+        limit = args.get("limit")
+        result = self.workspace.read_file(path, offset, limit)
         if result.get("truncated"):
             result["_truncated"] = True
         return result

@@ -1,10 +1,28 @@
 """Workspace: filesystem operations + ignore rules."""
 
+from __future__ import annotations
+
+import difflib
 import os
 from pathlib import Path
 from typing import Iterator
 
 import pathspec
+
+
+BINARY_EXTENSIONS = frozenset({
+    ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z",
+    ".exe", ".dll", ".so", ".dylib", ".class", ".jar",
+    ".o", ".a", ".lib", ".obj", ".wasm",
+    ".pyc", ".pyo",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp",
+    ".mp3", ".mp4", ".wav", ".avi", ".mov", ".mkv",
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".bin", ".dat",
+})
+
+MAX_LINE_LENGTH = 2000
+MAX_LINE_SUFFIX = f"... (truncated to {MAX_LINE_LENGTH} chars)"
 
 
 # Always ignore these patterns (in addition to .gitignore)
@@ -30,6 +48,7 @@ class Workspace:
     def __init__(self, root: str | Path):
         self.root = Path(root).resolve()
         self._spec: pathspec.PathSpec | None = None
+        self._files_read: set[str] = set()  # tracks files the LLM has read
 
     def _load_ignore_spec(self) -> pathspec.PathSpec:
         """Load and combine ignore patterns."""
@@ -168,47 +187,145 @@ class Workspace:
         return results
 
     def read_file(
-        self, path: str, start_line: int | None = None, end_line: int | None = None
+        self, path: str, offset: int | None = None, limit: int | None = None
     ) -> dict:
-        """Read file content with optional line range."""
+        """Read file content with line number prefixes.
+
+        Returns lines formatted as ``{line_number}: {content}`` so the LLM
+        can reference exact locations when using the edit tool.
+
+        Args:
+            path: File path relative to workspace root.
+            offset: 1-indexed line to start reading from (default 1).
+            limit: Max lines to return (default 2000).
+        """
         target = self.resolve_path(path)
         if target is None:
             return {"error": "Path outside workspace", "content": None}
 
         if not target.exists():
-            return {"error": "File not found", "content": None}
+            hint = self._suggest_similar_files(path)
+            msg = f"File not found: {path}"
+            if hint:
+                msg += f"\n\nDid you mean one of these?\n{hint}"
+            return {"error": msg, "content": None}
 
         if not target.is_file():
-            return {"error": "Not a file", "content": None}
+            return {"error": f"Not a file: {path}", "content": None}
 
-        max_bytes = 100_000  # 100KB limit
+        if self._is_binary(target):
+            return {"error": f"Cannot read binary file: {path}", "content": None}
+
+        max_bytes = 50_000  # 50KB cap (matches OpenCode)
+        read_limit = limit or 2000
+        start = (offset or 1) - 1  # 1-indexed -> 0-indexed
 
         try:
             content = target.read_text(errors="replace")
-            lines = content.splitlines(keepends=True)
-            total_lines = len(lines)
+            self._files_read.add(str(target.relative_to(self.root)))
+            all_lines = content.splitlines()
+            total_lines = len(all_lines)
 
-            # Apply line range
-            if start_line is not None or end_line is not None:
-                start = (start_line or 1) - 1  # 1-indexed to 0-indexed
-                end = end_line or total_lines
-                lines = lines[max(0, start) : min(end, total_lines)]
+            if start >= total_lines and not (total_lines == 0 and start == 0):
+                return {
+                    "error": f"Offset {start + 1} is out of range (file has {total_lines} lines)",
+                    "content": None,
+                }
 
-            result_content = "".join(lines)
-            truncated = False
+            selected = all_lines[start : start + read_limit]
 
-            if len(result_content) > max_bytes:
-                result_content = result_content[:max_bytes]
-                truncated = True
+            # Format with line number prefixes and truncate long lines
+            numbered: list[str] = []
+            byte_count = 0
+            truncated_by_bytes = False
+            for i, line in enumerate(selected):
+                if len(line) > MAX_LINE_LENGTH:
+                    line = line[:MAX_LINE_LENGTH] + MAX_LINE_SUFFIX
+                prefixed = f"{start + i + 1}: {line}"
+                line_bytes = len(prefixed.encode("utf-8")) + 1
+                if byte_count + line_bytes > max_bytes:
+                    truncated_by_bytes = True
+                    break
+                numbered.append(prefixed)
+                byte_count += line_bytes
+
+            result_content = "\n".join(numbered)
+            last_line = start + len(numbered)
+            has_more = last_line < total_lines or truncated_by_bytes
+
+            # Build pagination footer
+            if truncated_by_bytes:
+                footer = (
+                    f"(Output capped at {max_bytes // 1024}KB. "
+                    f"Showing lines {start + 1}-{last_line} of {total_lines}. "
+                    f"Use offset={last_line + 1} to continue.)"
+                )
+            elif has_more:
+                footer = (
+                    f"(Showing lines {start + 1}-{last_line} of {total_lines}. "
+                    f"Use offset={last_line + 1} to continue.)"
+                )
+            else:
+                footer = f"(End of file - {total_lines} lines)"
+
+            result_content += "\n\n" + footer
 
             return {
                 "content": result_content,
                 "total_lines": total_lines,
-                "truncated": truncated,
-                "bytes": len(result_content),
+                "truncated": has_more,
+                "bytes": byte_count,
             }
         except Exception as e:
             return {"error": str(e), "content": None}
+
+    def _is_binary(self, path: Path) -> bool:
+        """Check if a file is binary by extension or by sampling bytes."""
+        if path.suffix.lower() in BINARY_EXTENSIONS:
+            return True
+        try:
+            size = path.stat().st_size
+            if size == 0:
+                return False
+            sample_size = min(4096, size)
+            data = path.read_bytes()[:sample_size]
+            if b"\x00" in data:
+                return True
+            non_printable = sum(
+                1 for b in data if b < 9 or (13 < b < 32)
+            )
+            return non_printable / len(data) > 0.3
+        except Exception:
+            return False
+
+    def _suggest_similar_files(self, path: str) -> str:
+        """Search the parent directory for similarly-named files."""
+        target = self.resolve_path(path)
+        if target is None:
+            return ""
+        parent = target.parent
+        if not parent.exists():
+            return ""
+        basename = target.name.lower()
+        try:
+            candidates = [
+                str(e.relative_to(self.root))
+                for e in parent.iterdir()
+                if e.is_file()
+                and (basename in e.name.lower() or e.name.lower() in basename)
+            ]
+            if not candidates:
+                close = difflib.get_close_matches(
+                    target.name,
+                    [e.name for e in parent.iterdir() if e.is_file()],
+                    n=3, cutoff=0.6,
+                )
+                candidates = [
+                    str((parent / c).relative_to(self.root)) for c in close
+                ]
+            return "\n".join(candidates[:3])
+        except Exception:
+            return ""
 
     def write_file(self, path: str, content: str) -> dict:
         """Write content to file."""
@@ -219,7 +336,9 @@ class Workspace:
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content)
-            return {"success": True, "bytes": len(content), "path": str(target.relative_to(self.root))}
+            rel = str(self._relative_path(path))
+            self._files_read.add(rel)
+            return {"success": True, "bytes": len(content), "path": rel}
         except Exception as e:
             return {"success": False, "error": str(e)}
 

@@ -19,9 +19,9 @@ SYSTEM_PROMPT = """You are MiniCode, an AI coding assistant. You help users with
 - `list(path)` - List directory contents
 - `glob(pattern)` - Find files matching a pattern (e.g., "**/*.py")
 - `grep(query, path, glob_filter)` - Search for text in files
-- `read(path, start_line, end_line)` - Read file contents (use line ranges for large files)
-- `write(path, content)` - Create or overwrite a file
-- `edit(path, old_string, new_string, replace_all)` - Replace old_string with new_string in a file. old_string must match exactly (including whitespace and indentation) and be unique. Use replace_all=true to rename across the file.
+- `read(path, offset, limit)` - Read a file. Returns lines prefixed with line numbers (e.g. `1: content`). Use offset to paginate. Use grep to search large files instead of reading them entirely.
+- `write(path, content)` - Create or overwrite a file. ALWAYS prefer the edit tool for targeted changes. NEVER write new files unless explicitly required.
+- `edit(path, old_string, new_string, replace_all)` - Exact string replacement. old_string must match exactly (including whitespace and indentation). Include 3-5 lines of context to make it unique. Use replace_all=true to rename across the file.
 - `bash(command, timeout_ms)` - Run a shell command
 
 ## When Finished
