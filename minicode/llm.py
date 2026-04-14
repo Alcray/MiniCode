@@ -146,6 +146,7 @@ class MockLLMClient:
     """Mock LLM client for testing."""
 
     def __init__(self, responses: list[LLMResponse] | None = None):
+        self.config = LLMConfig(api_key="mock", model="mock-model", base_url="http://mock")
         self.responses = responses or []
         self._call_index = 0
         self.call_history: list[tuple[list[dict], list[dict] | None]] = []
