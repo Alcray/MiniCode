@@ -139,7 +139,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "edit",
-            "description": "Edit a file by replacing old_string with new_string. The old_string must match exactly (including whitespace). For creating new files or full rewrites, use the write tool instead.",
+            "description": "Performs exact string replacements in files. The old_string must match exactly (including whitespace and indentation) and must be unique in the file. Provide enough surrounding context (3-5 lines) to make old_string unique. Use replace_all to change every instance. For creating new files or full rewrites, use the write tool instead.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -149,11 +149,15 @@ TOOL_SCHEMAS = [
                     },
                     "old_string": {
                         "type": "string",
-                        "description": "The exact text to find and replace (must be unique in the file)",
+                        "description": "The text to find and replace (must be unique in the file unless replace_all is true)",
                     },
                     "new_string": {
                         "type": "string",
                         "description": "The text to replace it with",
+                    },
+                    "replace_all": {
+                        "type": "boolean",
+                        "description": "Replace all occurrences of old_string (default false)",
                     },
                 },
                 "required": ["path", "old_string", "new_string"],
@@ -283,12 +287,18 @@ class ToolExecutor:
         return self.workspace.write_file(path, content)
 
     def _execute_edit(self, args: dict) -> dict:
+        from .edit_match import find_similar_lines, replace
+
         path = args.get("path", "")
         old_string = args.get("old_string", "")
         new_string = args.get("new_string", "")
+        replace_all = args.get("replace_all", False)
 
         if not old_string:
             return {"error": "old_string cannot be empty"}
+
+        if old_string == new_string:
+            return {"error": "old_string and new_string are identical"}
 
         target = self.workspace.resolve_path(path)
         if target is None:
@@ -303,22 +313,23 @@ class ToolExecutor:
         try:
             content = target.read_text()
 
-            # Check if old_string exists
-            count = content.count(old_string)
-            if count == 0:
-                return {"error": f"old_string not found in {path}"}
-            if count > 1:
-                return {"error": f"old_string found {count} times in {path}. Make it more specific to match exactly once."}
+            result = replace(content, old_string, new_string, replace_all)
+            if result is not None:
+                new_content, strategy = result
+                target.write_text(new_content)
+                return {"success": True, "path": path, "match": strategy}
 
-            # Replace
-            new_content = content.replace(old_string, new_string, 1)
-            target.write_text(new_content)
+            # All strategies failed -- build a diagnostic error message
+            hint = find_similar_lines(old_string, content)
+            error_msg = f"old_string not found in {path}"
+            if hint:
+                error_msg += (
+                    "\n\nDid you mean to match these lines?\n\n" + hint
+                    + "\n\nThe old_string must match existing file content, "
+                    "including whitespace and indentation."
+                )
+            return {"error": error_msg}
 
-            return {
-                "success": True,
-                "path": path,
-                "replacements": 1,
-            }
         except Exception as e:
             return {"error": str(e)}
 

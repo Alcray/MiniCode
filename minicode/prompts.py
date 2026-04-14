@@ -21,7 +21,7 @@ SYSTEM_PROMPT = """You are MiniCode, an AI coding assistant. You help users with
 - `grep(query, path, glob_filter)` - Search for text in files
 - `read(path, start_line, end_line)` - Read file contents (use line ranges for large files)
 - `write(path, content)` - Create or overwrite a file
-- `edit(path, old_string, new_string)` - Replace old_string with new_string in a file (old_string must match exactly once)
+- `edit(path, old_string, new_string, replace_all)` - Replace old_string with new_string in a file. old_string must match exactly (including whitespace and indentation) and be unique. Use replace_all=true to rename across the file.
 - `bash(command, timeout_ms)` - Run a shell command
 
 ## When Finished
