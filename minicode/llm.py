@@ -46,6 +46,8 @@ class LLMResponse:
     tool_calls: list[ToolCall]
     finish_reason: str
     usage: dict[str, int]
+    reasoning_content: str | None = None
+    raw_response: dict | None = None
 
     @property
     def has_tool_calls(self) -> bool:
@@ -97,6 +99,13 @@ class LLMClient:
         content = message.get("content")
         finish_reason = choice.get("finish_reason", "stop")
 
+        # Capture reasoning/thinking tokens (varies by provider)
+        reasoning_content = (
+            message.get("reasoning_content")
+            or message.get("reasoning")
+            or message.get("thinking")
+        )
+
         # Parse tool calls
         tool_calls = []
         if "tool_calls" in message and message["tool_calls"]:
@@ -122,7 +131,10 @@ class LLMClient:
                 "prompt_tokens": usage.get("prompt_tokens", 0),
                 "completion_tokens": usage.get("completion_tokens", 0),
                 "total_tokens": usage.get("total_tokens", 0),
+                "reasoning_tokens": usage.get("completion_tokens_details", {}).get("reasoning_tokens", 0),
             },
+            reasoning_content=reasoning_content,
+            raw_response=data,
         )
 
     def close(self):

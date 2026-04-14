@@ -230,15 +230,26 @@ class Agent:
                     has_tool_calls=response.has_tool_calls,
                     tool_call_count=len(response.tool_calls),
                     content_length=len(response.content or ""),
+                    content_preview=(response.content or "")[:500] or None,
+                    reasoning_length=len(response.reasoning_content or ""),
                     usage=response.usage,
                     finish_reason=response.finish_reason,
                 )
+
+                # Save raw API response for debugging
+                self.session_writer.save_raw_response(step, response.raw_response)
 
                 self.ui.on_llm_response(response)
 
                 # Check if done (no tool calls)
                 if not response.has_tool_calls:
                     final_message = response.content or ""
+                    # Still append the assistant message so messages.json
+                    # has the full conversation (content only, no reasoning)
+                    assistant_msg: dict[str, Any] = {"role": "assistant"}
+                    if response.content:
+                        assistant_msg["content"] = response.content
+                    messages.append(assistant_msg)
                     status = "complete"
                     self.logger.log_step_end(step, "complete")
                     break

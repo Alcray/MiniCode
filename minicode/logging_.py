@@ -82,6 +82,8 @@ class EventLogger:
         has_tool_calls: bool,
         tool_call_count: int,
         content_length: int,
+        content_preview: str | None,
+        reasoning_length: int,
         usage: dict[str, int],
         finish_reason: str,
     ):
@@ -89,6 +91,8 @@ class EventLogger:
             "has_tool_calls": has_tool_calls,
             "tool_call_count": tool_call_count,
             "content_length": content_length,
+            "content_preview": content_preview,
+            "reasoning_length": reasoning_length,
             "usage": usage,
             "finish_reason": finish_reason,
         })

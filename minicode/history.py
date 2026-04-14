@@ -173,6 +173,22 @@ class SessionWriter:
         self.session_dir = session_dir
         self.session_id = session_id
 
+    def save_raw_response(self, step: int, raw: dict | None):
+        """Append a raw API response to raw_responses.jsonl for debugging.
+
+        This captures the full model output including thinking/reasoning
+        tokens that are deliberately kept out of the conversation context.
+        """
+        if raw is None:
+            return
+        try:
+            self.session_dir.mkdir(parents=True, exist_ok=True)
+            entry = {"step": step, "raw": raw}
+            with open(self.session_dir / "raw_responses.jsonl", "a") as f:
+                f.write(json.dumps(entry, default=str) + "\n")
+        except Exception:
+            pass
+
     def save_messages(self, messages: list[dict]):
         """Save final messages state."""
         try:
