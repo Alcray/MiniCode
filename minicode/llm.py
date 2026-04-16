@@ -16,7 +16,7 @@ class LLMConfig:
     api_key: str = ""
     model: str = "gpt-4o"
     temperature: float = 0.0
-    max_tokens: int = 4096
+    max_tokens: int = 16384
 
     @classmethod
     def from_env(cls) -> "LLMConfig":
@@ -27,7 +27,7 @@ class LLMConfig:
             api_key=os.environ.get("MINICODE_API_KEY", os.environ.get("OPENAI_API_KEY", "")),
             model=os.environ.get("MINICODE_MODEL", "gpt-4o"),
             temperature=float(os.environ.get("MINICODE_TEMPERATURE", "0.0")),
-            max_tokens=int(os.environ.get("MINICODE_MAX_TOKENS", "4096")),
+            max_tokens=int(os.environ.get("MINICODE_MAX_TOKENS", "16384")),
         )
 
 
@@ -73,8 +73,11 @@ class LLMClient:
             "model": self.config.model,
             "messages": messages,
             "temperature": self.config.temperature,
-            "max_tokens": self.config.max_tokens,
         }
+
+        # max_tokens=0 means no limit (let the model use its native max)
+        if self.config.max_tokens > 0:
+            payload["max_tokens"] = self.config.max_tokens
 
         if tools:
             payload["tools"] = tools
