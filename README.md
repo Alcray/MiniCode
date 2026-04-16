@@ -312,7 +312,29 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Tests use a mock LLM client - no API key required.
+By default, ~120 offline tests run against a mock LLM client — no API key required.
+
+**Test files** (all committed, all runnable out of the box):
+
+- `tests/test_edit_match.py` — 72 tests for the cascading edit match strategies
+- `tests/test_read_write.py` — 29 tests for the read and write tools
+- `tests/test_llm_logging.py` — 14 tests for LLM response parsing and session logging
+- `tests/test_server.py` — 10 tests for the REST API
+- `tests/test_llm_integration.py` — 6 tests that make **real** LLM API calls (auto-skipped without a key)
+
+### Running the real-LLM integration tests
+
+Set one of these env vars before running pytest:
+
+```bash
+# NVIDIA build.nvidia.com (tested with openai/gpt-oss-120b)
+NVIDIA_API_KEY=nvapi-... pytest tests/test_llm_integration.py -v
+
+# Or standard OpenAI (tested with gpt-4o-mini)
+OPENAI_API_KEY=sk-... pytest tests/test_llm_integration.py -v
+```
+
+Without a key, those 6 tests skip cleanly. Everything else still runs.
 
 ## Extending MiniCode
 
