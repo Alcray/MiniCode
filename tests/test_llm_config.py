@@ -147,7 +147,7 @@ def test_google_cloud_provider_respects_explicit_base_url_and_prefixed_model():
     assert config.model == "google/gemini-custom"
 
 
-def test_apply_provider_defaults_resets_transport_for_non_google_cloud():
+def test_transport_resets_for_non_google_providers():
     """transport must be reset to OPENAI_TRANSPORT when provider is not google-cloud,
     even if it was previously set to GOOGLE_GENAI_TRANSPORT."""
     config = LLMConfig(
@@ -160,7 +160,8 @@ def test_apply_provider_defaults_resets_transport_for_non_google_cloud():
 
 
 def test_apply_provider_defaults_resets_transport_for_google_api_provider():
-    """Google API (AI Studio) provider uses the OpenAI-compatible transport."""
+    """Verifies transport is reset to OPENAI_TRANSPORT for Google API (AI Studio) provider
+    even when previously set to GOOGLE_GENAI_TRANSPORT."""
     config = LLMConfig(
         provider="gemini",
         transport=GOOGLE_GENAI_TRANSPORT,
