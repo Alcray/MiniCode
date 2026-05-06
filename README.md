@@ -47,7 +47,31 @@ export MINICODE_MODEL=llama3.1
 # Cerebras
 export MINICODE_BASE_URL=https://api.cerebras.ai/v1
 export MINICODE_API_KEY=...
+
+# Google Gemini API OpenAI-compatible endpoint with an API key
+export MINICODE_PROVIDER=google
+export GEMINI_API_KEY=...
+export MINICODE_MODEL=gemini-2.5-pro
+
+# Google Cloud Vertex AI OpenAI-compatible endpoint
+export MINICODE_PROVIDER=google-cloud
+export MINICODE_GOOGLE_CLOUD_PROJECT=my-project
+export MINICODE_GOOGLE_CLOUD_LOCATION=us-central1
+export MINICODE_GOOGLE_CLOUD_ACCESS_TOKEN="$(gcloud auth print-access-token)"
+export MINICODE_MODEL=gemini-2.5-pro
+
+# Google Cloud Vertex AI with an API key
+export MINICODE_PROVIDER=google-cloud
+export GOOGLE_CLOUD_API_KEY=...
+export MINICODE_MODEL=gemini-3.1-flash-lite-preview
 ```
+
+For direct Google API-key usage, `MINICODE_PROVIDER=google` builds the Gemini
+API OpenAI-compatible base URL. For Google Cloud Vertex AI, `google-cloud`
+builds the Vertex AI OpenAI-compatible base URL when OAuth bearer-token
+authentication is configured. If `GOOGLE_CLOUD_API_KEY` is set, MiniCode uses
+the Google GenAI SDK with `vertexai=True` because that is the Vertex API-key
+flow.
 
 ## CLI Usage
 

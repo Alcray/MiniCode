@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -51,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--provider",
         type=str,
-        help="Provider label (for logging only)",
+        help="Provider to use for LLM config defaults",
     )
 
     # Agent configuration
@@ -248,6 +249,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         llm_config.base_url = args.base_url
     if args.provider:
         llm_config.provider = args.provider
+    llm_config.apply_provider_defaults(
+        base_url_explicit=args.base_url is not None or "MINICODE_BASE_URL" in os.environ,
+        api_key_explicit=bool(os.environ.get("MINICODE_API_KEY")),
+        model_explicit=args.model is not None or "MINICODE_MODEL" in os.environ,
+    )
 
     # Validate API key
     if not llm_config.api_key:
