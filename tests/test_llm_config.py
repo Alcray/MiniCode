@@ -1,6 +1,7 @@
 """Tests for LLM provider configuration."""
 
 import os
+import pytest
 from unittest.mock import patch
 
 from minicode.llm import GOOGLE_GENAI_TRANSPORT, OPENAI_TRANSPORT, LLMConfig
@@ -144,3 +145,56 @@ def test_google_cloud_provider_respects_explicit_base_url_and_prefixed_model():
     assert config.base_url == "https://example.test/v1"
     assert config.api_key == "ya29.token"
     assert config.model == "google/gemini-custom"
+
+
+def test_apply_provider_defaults_resets_transport_for_non_google_cloud():
+    """transport must be reset to OPENAI_TRANSPORT when provider is not google-cloud,
+    even if it was previously set to GOOGLE_GENAI_TRANSPORT."""
+    config = LLMConfig(
+        provider="openai",
+        transport=GOOGLE_GENAI_TRANSPORT,  # simulate previously-set value
+        api_key="sk-test",
+    )
+    config.apply_provider_defaults()
+    assert config.transport == OPENAI_TRANSPORT
+
+
+def test_apply_provider_defaults_resets_transport_for_google_api_provider():
+    """Google API (AI Studio) provider uses the OpenAI-compatible transport."""
+    config = LLMConfig(
+        provider="gemini",
+        transport=GOOGLE_GENAI_TRANSPORT,
+        api_key="gemini-key",
+    )
+    config.apply_provider_defaults(api_key_explicit=True)
+    assert config.transport == OPENAI_TRANSPORT
+
+
+def test_google_cloud_provider_raises_when_no_project_and_no_base_url():
+    """google-cloud provider with no project_id and no explicit base_url must raise."""
+    with patch.dict(
+        os.environ,
+        {
+            "MINICODE_PROVIDER": "google-cloud",
+            "GOOGLE_CLOUD_ACCESS_TOKEN": "ya29.token",
+        },
+        clear=True,
+    ):
+        with pytest.raises(ValueError, match="MINICODE_GOOGLE_CLOUD_PROJECT"):
+            LLMConfig.from_env()
+
+
+def test_google_cloud_provider_genai_transport_does_not_require_project_id():
+    """google-cloud + API key (GenAI transport) should NOT require project_id."""
+    with patch.dict(
+        os.environ,
+        {
+            "MINICODE_PROVIDER": "google-cloud",
+            "GOOGLE_CLOUD_API_KEY": "cloud-key",
+        },
+        clear=True,
+    ):
+        config = LLMConfig.from_env()
+
+    assert config.transport == GOOGLE_GENAI_TRANSPORT
+    assert config.api_key == "cloud-key"

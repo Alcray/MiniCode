@@ -108,6 +108,10 @@ class LLMConfig:
         """Apply provider-specific OpenAI-compatible defaults."""
         provider = _provider_key(self.provider)
 
+        # Always reset transport first so a previously set GOOGLE_GENAI_TRANSPORT
+        # does not bleed into unrelated providers.
+        self.transport = OPENAI_TRANSPORT
+
         if provider in GOOGLE_API_PROVIDER_ALIASES:
             if not base_url_explicit:
                 self.base_url = DEFAULT_GOOGLE_API_BASE_URL
@@ -127,23 +131,28 @@ class LLMConfig:
         if provider not in GOOGLE_CLOUD_PROVIDER_ALIASES:
             return
 
-        if not base_url_explicit:
-            project_id = _env_first(
+        # Resolve project_id up-front so we can detect a misconfigured state later.
+        project_id = (
+            _env_first(
                 "MINICODE_GOOGLE_CLOUD_PROJECT",
                 "GOOGLE_CLOUD_PROJECT",
                 "GOOGLE_CLOUD_PROJECT_ID",
             )
-            if project_id:
-                location = _env_first(
-                    "MINICODE_GOOGLE_CLOUD_LOCATION",
-                    "GOOGLE_CLOUD_LOCATION",
-                    "GOOGLE_CLOUD_REGION",
-                ) or DEFAULT_GOOGLE_CLOUD_LOCATION
-                api_version = (
-                    os.environ.get("MINICODE_GOOGLE_CLOUD_API_VERSION")
-                    or DEFAULT_GOOGLE_CLOUD_API_VERSION
-                )
-                self.base_url = self.google_cloud_base_url(project_id, location, api_version)
+            if not base_url_explicit
+            else ""
+        )
+
+        if not base_url_explicit and project_id:
+            location = _env_first(
+                "MINICODE_GOOGLE_CLOUD_LOCATION",
+                "GOOGLE_CLOUD_LOCATION",
+                "GOOGLE_CLOUD_REGION",
+            ) or DEFAULT_GOOGLE_CLOUD_LOCATION
+            api_version = (
+                os.environ.get("MINICODE_GOOGLE_CLOUD_API_VERSION")
+                or DEFAULT_GOOGLE_CLOUD_API_VERSION
+            )
+            self.base_url = self.google_cloud_base_url(project_id, location, api_version)
 
         if not api_key_explicit:
             google_cloud_api_key = _env_first(
@@ -166,6 +175,16 @@ class LLMConfig:
             elif self.model.startswith("google/"):
                 self.model = self.model.removeprefix("google/")
             return
+
+        # OpenAI-compatible Vertex AI path: a valid Vertex base_url is required.
+        # Fail fast rather than silently routing to the wrong endpoint.
+        if not base_url_explicit and not project_id:
+            raise ValueError(
+                f"MINICODE_PROVIDER={self.provider!r} requires either an explicit "
+                "MINICODE_BASE_URL or a Google Cloud project ID "
+                "(MINICODE_GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_PROJECT). "
+                "To use the Google GenAI SDK transport instead, set GOOGLE_CLOUD_API_KEY."
+            )
 
         if not api_key_explicit:
             self.api_key = _env_first(
