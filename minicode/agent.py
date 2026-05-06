@@ -353,7 +353,7 @@ class Agent:
                                     if isinstance(tc.thought_signature, bytes)
                                     else tc.thought_signature
                                 }
-                                if getattr(tc, "thought_signature", None)
+                                if tc.thought_signature is not None
                                 else {}
                             ),
                             "function": {
