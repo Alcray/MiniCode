@@ -103,7 +103,7 @@ def create_app() -> FastAPI:
             llm_config.base_url = body.base_url
         llm_config.apply_provider_defaults(
             base_url_explicit=body.base_url is not None or "MINICODE_BASE_URL" in os.environ,
-            api_key_explicit=bool(os.environ.get("MINICODE_API_KEY") or os.environ.get("OPENAI_API_KEY")),
+            api_key_explicit=bool(os.environ.get("MINICODE_API_KEY")),
             model_explicit=body.model is not None or "MINICODE_MODEL" in os.environ,
         )
 

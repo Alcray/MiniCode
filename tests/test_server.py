@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from minicode.agent import AgentResult
-from minicode.llm import LLMResponse, MockLLMClient
+from minicode.llm import GOOGLE_GENAI_TRANSPORT, LLMResponse, MockLLMClient
 from minicode.server import create_app
 
 
@@ -180,6 +180,58 @@ class TestRunEndpoint:
             "https://us-central1-aiplatform.googleapis.com/v1beta1/"
             "projects/my-project/locations/us-central1/endpoints/openapi"
         )
+
+    def test_run_with_google_api_key_provider_override(self, client, workspace):
+        """POST /run accepts Google API-key provider settings."""
+        mock_result = _make_mock_result()
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "gemini-key"}, clear=True):
+            with patch("minicode.server.Agent") as MockAgent:
+                mock_agent_instance = MockAgent.return_value
+                mock_agent_instance.run.return_value = mock_result
+
+                with patch("minicode.server.LLMClient") as MockLLM:
+                    response = client.post(
+                        "/run",
+                        json={
+                            "request": "say hello",
+                            "root": workspace,
+                            "provider": "google",
+                            "model": "gemini-2.5-pro",
+                        },
+                    )
+
+        assert response.status_code == 200
+        llm_config = MockLLM.call_args.args[0]
+        assert llm_config.api_key == "gemini-key"
+        assert llm_config.model == "gemini-2.5-pro"
+        assert llm_config.base_url == "https://generativelanguage.googleapis.com/v1beta/openai"
+
+    def test_run_with_google_cloud_api_key_provider_override(self, client, workspace):
+        """POST /run accepts Google Cloud API-key provider settings."""
+        mock_result = _make_mock_result()
+
+        with patch.dict(os.environ, {"GOOGLE_CLOUD_API_KEY": "cloud-api-key"}, clear=True):
+            with patch("minicode.server.Agent") as MockAgent:
+                mock_agent_instance = MockAgent.return_value
+                mock_agent_instance.run.return_value = mock_result
+
+                with patch("minicode.server.LLMClient") as MockLLM:
+                    response = client.post(
+                        "/run",
+                        json={
+                            "request": "say hello",
+                            "root": workspace,
+                            "provider": "google-cloud",
+                            "model": "google/gemini-3.1-flash-lite-preview",
+                        },
+                    )
+
+        assert response.status_code == 200
+        llm_config = MockLLM.call_args.args[0]
+        assert llm_config.api_key == "cloud-api-key"
+        assert llm_config.model == "gemini-3.1-flash-lite-preview"
+        assert llm_config.transport == GOOGLE_GENAI_TRANSPORT
 
 
 # ---------------------------------------------------------------------------
