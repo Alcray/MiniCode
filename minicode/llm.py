@@ -205,6 +205,7 @@ class ToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
+    thought_signature: bytes | None = None
 
 
 @dataclass
@@ -387,11 +388,20 @@ class LLMClient:
                 tool_call_id = tool_call.get("id")
                 if tool_call_id:
                     tool_call_names[tool_call_id] = name
-                parts.append(types.Part(function_call=types.FunctionCall(
-                    id=tool_call_id,
-                    name=name,
-                    args=args,
-                )))
+                thought_signature = tool_call.get("thought_signature")
+                if isinstance(thought_signature, str):
+                    # Internal messages may be persisted through JSON. We keep
+                    # byte signatures as latin1 strings when needed so they can
+                    # round-trip without base64 plumbing.
+                    thought_signature = thought_signature.encode("latin1")
+                parts.append(types.Part(
+                    function_call=types.FunctionCall(
+                        id=tool_call_id,
+                        name=name,
+                        args=args,
+                    ),
+                    thought_signature=thought_signature,
+                ))
 
             if parts:
                 contents.append(types.Content(
@@ -406,15 +416,28 @@ class LLMClient:
     def _parse_google_genai_response(response: Any) -> LLMResponse:
         content = getattr(response, "text", None)
         function_calls = getattr(response, "function_calls", None) or []
+        function_call_parts = []
+        candidates = getattr(response, "candidates", None) or []
+        if candidates:
+            candidate_content = getattr(candidates[0], "content", None)
+            function_call_parts = [
+                part
+                for part in (getattr(candidate_content, "parts", None) or [])
+                if getattr(part, "function_call", None) is not None
+            ]
         tool_calls = []
         for i, function_call in enumerate(function_calls):
             name = getattr(function_call, "name", "")
             args = getattr(function_call, "args", {}) or {}
             tool_call_id = getattr(function_call, "id", None) or f"call_google_{i}"
+            thought_signature = None
+            if i < len(function_call_parts):
+                thought_signature = getattr(function_call_parts[i], "thought_signature", None)
             tool_calls.append(ToolCall(
                 id=tool_call_id,
                 name=name,
                 arguments=dict(args),
+                thought_signature=thought_signature,
             ))
 
         usage_metadata = getattr(response, "usage_metadata", None)

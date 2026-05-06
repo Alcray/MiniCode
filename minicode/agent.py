@@ -347,6 +347,15 @@ class Agent:
                         {
                             "id": tc.id,
                             "type": "function",
+                            **(
+                                {
+                                    "thought_signature": tc.thought_signature.decode("latin1")
+                                    if isinstance(tc.thought_signature, bytes)
+                                    else tc.thought_signature
+                                }
+                                if tc.thought_signature is not None
+                                else {}
+                            ),
                             "function": {
                                 "name": tc.name,
                                 "arguments": json.dumps(tc.arguments),

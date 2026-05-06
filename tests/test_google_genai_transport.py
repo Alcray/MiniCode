@@ -22,10 +22,17 @@ class FakeFunctionCall:
 
 
 class FakePart:
-    def __init__(self, text=None, function_call=None, function_response=None):
+    def __init__(
+        self,
+        text=None,
+        function_call=None,
+        function_response=None,
+        thought_signature=None,
+    ):
         self.text = text
         self.function_call = function_call
         self.function_response = function_response
+        self.thought_signature = thought_signature
 
     @classmethod
     def from_text(cls, text):
@@ -62,6 +69,18 @@ class FakeUsageMetadata:
 class FakeResponse:
     text = None
     function_calls = [FakeFunctionCall(id=None, name="read", args={"path": "main.py"})]
+    candidates = [
+        pytypes.SimpleNamespace(
+            content=pytypes.SimpleNamespace(
+                parts=[
+                    FakePart(
+                        function_call=FakeFunctionCall(name="read", args={"path": "main.py"}),
+                        thought_signature=b"sig",
+                    )
+                ]
+            )
+        )
+    ]
     usage_metadata = FakeUsageMetadata()
 
     def model_dump(self, exclude_none=True):
@@ -150,4 +169,32 @@ def test_google_genai_transport_converts_tools_and_tool_calls():
     assert response.tool_calls[0].id == "call_google_0"
     assert response.tool_calls[0].name == "read"
     assert response.tool_calls[0].arguments == {"path": "main.py"}
+    assert response.tool_calls[0].thought_signature == b"sig"
     assert response.usage["reasoning_tokens"] == 2
+
+
+def test_google_genai_transport_preserves_thought_signature_in_history():
+    types_module = _fake_google_modules()["google.genai"].types
+    contents, _ = LLMClient._to_google_contents(
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "call_google_0",
+                        "type": "function",
+                        "thought_signature": b"sig".decode("latin1"),
+                        "function": {
+                            "name": "read",
+                            "arguments": "{\"path\": \"main.py\"}",
+                        },
+                    }
+                ],
+            }
+        ],
+        types_module,
+    )
+
+    part = contents[0].parts[0]
+    assert part.function_call.name == "read"
+    assert part.thought_signature == b"sig"
