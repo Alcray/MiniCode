@@ -8,27 +8,118 @@ from typing import Any
 import httpx
 
 
+DEFAULT_PROVIDER = "openai"
+DEFAULT_BASE_URL = "https://api.openai.com/v1"
+DEFAULT_MODEL = "gpt-4o"
+
+GOOGLE_CLOUD_PROVIDER_ALIASES = {
+    "google_cloud",
+    "google-cloud",
+    "gcp",
+    "vertex_ai",
+    "vertex-ai",
+}
+DEFAULT_GOOGLE_CLOUD_LOCATION = "us-central1"
+DEFAULT_GOOGLE_CLOUD_API_VERSION = "v1beta1"
+DEFAULT_GOOGLE_CLOUD_MODEL = "google/gemini-2.5-pro"
+
+
+def _env_first(*names: str) -> str:
+    for name in names:
+        value = os.environ.get(name, "")
+        if value:
+            return value
+    return ""
+
+
+def _provider_key(provider: str) -> str:
+    return provider.strip().lower()
+
+
 @dataclass
 class LLMConfig:
     """Configuration for the LLM client."""
-    provider: str = "openai"
-    base_url: str = "https://api.openai.com/v1"
+    provider: str = DEFAULT_PROVIDER
+    base_url: str = DEFAULT_BASE_URL
     api_key: str = ""
-    model: str = "gpt-4o"
+    model: str = DEFAULT_MODEL
     temperature: float = 0.0
     max_tokens: int = 16384
 
     @classmethod
     def from_env(cls) -> "LLMConfig":
         """Load config from environment variables."""
-        return cls(
-            provider=os.environ.get("MINICODE_PROVIDER", "openai"),
-            base_url=os.environ.get("MINICODE_BASE_URL", "https://api.openai.com/v1"),
-            api_key=os.environ.get("MINICODE_API_KEY", os.environ.get("OPENAI_API_KEY", "")),
-            model=os.environ.get("MINICODE_MODEL", "gpt-4o"),
+        base_url = os.environ.get("MINICODE_BASE_URL")
+        api_key = _env_first("MINICODE_API_KEY", "OPENAI_API_KEY")
+        model = os.environ.get("MINICODE_MODEL")
+
+        config = cls(
+            provider=os.environ.get("MINICODE_PROVIDER", DEFAULT_PROVIDER),
+            base_url=base_url or DEFAULT_BASE_URL,
+            api_key=api_key,
+            model=model or DEFAULT_MODEL,
             temperature=float(os.environ.get("MINICODE_TEMPERATURE", "0.0")),
             max_tokens=int(os.environ.get("MINICODE_MAX_TOKENS", "16384")),
         )
+        config.apply_provider_defaults(
+            base_url_explicit=base_url is not None,
+            api_key_explicit=bool(api_key),
+            model_explicit=model is not None,
+        )
+        return config
+
+    @staticmethod
+    def google_cloud_base_url(
+        project_id: str,
+        location: str = DEFAULT_GOOGLE_CLOUD_LOCATION,
+        api_version: str = DEFAULT_GOOGLE_CLOUD_API_VERSION,
+    ) -> str:
+        """Build the Google Cloud OpenAI-compatible Vertex AI base URL."""
+        return (
+            f"https://{location}-aiplatform.googleapis.com/{api_version}/"
+            f"projects/{project_id}/locations/{location}/endpoints/openapi"
+        )
+
+    def apply_provider_defaults(
+        self,
+        *,
+        base_url_explicit: bool = False,
+        api_key_explicit: bool = False,
+        model_explicit: bool = False,
+    ) -> None:
+        """Apply provider-specific OpenAI-compatible defaults."""
+        if _provider_key(self.provider) not in GOOGLE_CLOUD_PROVIDER_ALIASES:
+            return
+
+        if not base_url_explicit:
+            project_id = _env_first(
+                "MINICODE_GOOGLE_CLOUD_PROJECT",
+                "GOOGLE_CLOUD_PROJECT",
+                "GOOGLE_CLOUD_PROJECT_ID",
+            )
+            if project_id:
+                location = _env_first(
+                    "MINICODE_GOOGLE_CLOUD_LOCATION",
+                    "GOOGLE_CLOUD_LOCATION",
+                    "GOOGLE_CLOUD_REGION",
+                ) or DEFAULT_GOOGLE_CLOUD_LOCATION
+                api_version = (
+                    os.environ.get("MINICODE_GOOGLE_CLOUD_API_VERSION")
+                    or DEFAULT_GOOGLE_CLOUD_API_VERSION
+                )
+                self.base_url = self.google_cloud_base_url(project_id, location, api_version)
+
+        if not api_key_explicit:
+            self.api_key = _env_first(
+                "MINICODE_GOOGLE_CLOUD_ACCESS_TOKEN",
+                "GOOGLE_CLOUD_ACCESS_TOKEN",
+                "GOOGLE_OAUTH_ACCESS_TOKEN",
+            )
+
+        if not model_explicit:
+            self.model = DEFAULT_GOOGLE_CLOUD_MODEL
+        elif "/" not in self.model:
+            self.model = f"google/{self.model}"
 
 
 @dataclass

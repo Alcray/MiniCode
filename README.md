@@ -47,7 +47,19 @@ export MINICODE_MODEL=llama3.1
 # Cerebras
 export MINICODE_BASE_URL=https://api.cerebras.ai/v1
 export MINICODE_API_KEY=...
+
+# Google Cloud Vertex AI OpenAI-compatible endpoint
+export MINICODE_PROVIDER=google-cloud
+export MINICODE_GOOGLE_CLOUD_PROJECT=my-project
+export MINICODE_GOOGLE_CLOUD_LOCATION=us-central1
+export MINICODE_GOOGLE_CLOUD_ACCESS_TOKEN="$(gcloud auth print-access-token)"
+export MINICODE_MODEL=gemini-2.5-pro
 ```
+
+For Google Cloud, MiniCode builds the Vertex AI OpenAI-compatible base URL and
+uses OAuth bearer-token authentication. A Google Cloud API key is not supported
+by Vertex AI's OpenAI-compatible Chat Completions endpoint. The chat completions
+flow is still OpenAI-compatible; it does not use the google.genai Gemini SDK.
 
 ## CLI Usage
 

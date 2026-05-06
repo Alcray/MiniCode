@@ -27,6 +27,7 @@ class RunRequest(BaseModel):
     root: str = Field(".", description="Workspace root directory")
     max_steps: int = Field(30, description="Maximum agent steps", ge=1, le=200)
     plan_mode: bool = Field(False, description="Plan mode: explore only, no modifications")
+    provider: str | None = Field(None, description="LLM provider override")
     model: str | None = Field(None, description="LLM model override")
     base_url: str | None = Field(None, description="LLM API base URL override")
     system_prompt: str | None = Field(None, description="Custom system prompt")
@@ -94,10 +95,17 @@ def create_app() -> FastAPI:
 
         # Build LLM config from environment, apply optional overrides
         llm_config = LLMConfig.from_env()
+        if body.provider:
+            llm_config.provider = body.provider
         if body.model:
             llm_config.model = body.model
         if body.base_url:
             llm_config.base_url = body.base_url
+        llm_config.apply_provider_defaults(
+            base_url_explicit=body.base_url is not None or "MINICODE_BASE_URL" in os.environ,
+            api_key_explicit=bool(os.environ.get("MINICODE_API_KEY") or os.environ.get("OPENAI_API_KEY")),
+            model_explicit=body.model is not None or "MINICODE_MODEL" in os.environ,
+        )
 
         if not llm_config.api_key:
             raise HTTPException(

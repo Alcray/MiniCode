@@ -144,6 +144,43 @@ class TestRunEndpoint:
 
         assert response.status_code == 200
 
+    def test_run_with_google_cloud_provider_override(self, client, workspace):
+        """POST /run accepts Google Cloud provider settings."""
+        mock_result = _make_mock_result()
+
+        with patch.dict(
+            os.environ,
+            {
+                "GOOGLE_CLOUD_PROJECT": "my-project",
+                "GOOGLE_CLOUD_LOCATION": "us-central1",
+                "GOOGLE_CLOUD_ACCESS_TOKEN": "ya29.token",
+            },
+            clear=True,
+        ):
+            with patch("minicode.server.Agent") as MockAgent:
+                mock_agent_instance = MockAgent.return_value
+                mock_agent_instance.run.return_value = mock_result
+
+                with patch("minicode.server.LLMClient") as MockLLM:
+                    response = client.post(
+                        "/run",
+                        json={
+                            "request": "say hello",
+                            "root": workspace,
+                            "provider": "google-cloud",
+                            "model": "gemini-2.5-pro",
+                        },
+                    )
+
+        assert response.status_code == 200
+        llm_config = MockLLM.call_args.args[0]
+        assert llm_config.api_key == "ya29.token"
+        assert llm_config.model == "google/gemini-2.5-pro"
+        assert llm_config.base_url == (
+            "https://us-central1-aiplatform.googleapis.com/v1beta1/"
+            "projects/my-project/locations/us-central1/endpoints/openapi"
+        )
+
 
 # ---------------------------------------------------------------------------
 # GET /sessions
